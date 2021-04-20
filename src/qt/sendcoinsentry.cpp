@@ -1,5 +1,4 @@
 // Copyright (c) 2011-2017 The Bitcoin Core developers
-// Copyright (c) 2020 The Gapcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -12,16 +11,8 @@
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
 
-#include <crypto/sha256.h> // hashing
-#include <util.h>
-#include <utilstrencodings.h>
-#include <iostream>        // std::cout
-#include <fstream>         // std::filebuf, std::ifstream
-#include <regex>
-
 #include <QApplication>
 #include <QClipboard>
-#include <QFileDialog>
 
 SendCoinsEntry::SendCoinsEntry(const PlatformStyle *_platformStyle, QWidget *parent) :
     QStackedWidget(parent),
@@ -52,7 +43,6 @@ SendCoinsEntry::SendCoinsEntry(const PlatformStyle *_platformStyle, QWidget *par
 
     // Connect signals
     connect(ui->payAmount, SIGNAL(valueChanged()), this, SIGNAL(payAmountChanged()));
-    connect(ui->inscriptionText, SIGNAL(textEdited(QString)), this, SLOT(inscriptionChanged()));
     connect(ui->checkboxSubtractFeeFromAmount, SIGNAL(toggled(bool)), this, SIGNAL(subtractFeeFromAmountChanged()));
     connect(ui->deleteButton, SIGNAL(clicked()), this, SLOT(deleteClicked()));
     connect(ui->deleteButton_is, SIGNAL(clicked()), this, SLOT(deleteClicked()));
@@ -84,90 +74,9 @@ void SendCoinsEntry::on_addressBookButton_clicked()
     }
 }
 
-void SendCoinsEntry::on_selectFileButton_clicked()
-{
-    QString fileName;
-    QFileDialog dlg(this);
-    dlg.setFileMode(QFileDialog::ExistingFile);
-
-    if (dlg.exec())
-    {
-        fileName = dlg.selectedFiles()[0];
-        unsigned char shahash[CSHA256::OUTPUT_SIZE];
-        std::ifstream infile (fileName.toStdString(), std::ios::binary);
-
-        // get size of file
-        infile.seekg (0,infile.end);
-        long bufsize = infile.tellg();
-        infile.seekg (0);
-
-        // allocate memory for file content
-        char* buffer = new char[bufsize];
-
-        // read content of infile
-        infile.read (buffer, bufsize);
-        infile.close();
-
-        CSHA256().Write((const unsigned char*)buffer, bufsize).Finalize(shahash);
-        std::string notaryID = HashToString(shahash);
-
-        // release dynamically-allocated memory
-        delete[] buffer;
-
-        if (!(IsHex(notaryID) && notaryID.length() == 64)) {
-            ui->inscriptionText->setValid(false);
-            return;
-        }
-        // Make sure wallet is unlocked
-        WalletModel::UnlockContext ctx(model->requestUnlock());
-        if (!ctx.isValid()) {
-            return;
-        }
-
-        // Warn if file is NULL
-        if (notaryID == "") {
-            QMessageBox::warning(this, tr("Notarize File"),
-                tr("Unable to open file for hashing."),
-                QMessageBox::Ok, QMessageBox::Ok);
-            return;
-        }
-        ui->inscriptionText->setText(QString::fromStdString(notaryID));
-    }
-}
-
-/*
-void SendCoinsEntry::contextualMenu(const QPoint &point)
-{
-    QModelIndex index = ui->tableWidget->indexAt(point);
-    if (index.isValid())
-    {
-        contextMenu->exec(QCursor::pos());
-    }
-}
-
-void SendCoinsEntry::onCopyTxID()
-{
-    QString txID = ui->tableWidget->selectedItems().at(0)->text();
-    if (txID.length() > 0) {
-        QApplication::clipboard()->setText(txID);
-    }
-}
-*/
-
 void SendCoinsEntry::on_payTo_textChanged(const QString &address)
 {
     updateLabel(address);
-}
-
-bool SendCoinsEntry::inscriptionChanged()
-{
-    if(!model)
-        return false;
-
-    if (!this->validateInscription())
-        return false;
-
-    return true;
 }
 
 void SendCoinsEntry::setModel(WalletModel *_model)
@@ -180,11 +89,6 @@ void SendCoinsEntry::setModel(WalletModel *_model)
     clear();
 }
 
-void SendCoinsEntry::setRemoveEnabled(bool enabled)
-{
-    ui->deleteButton->setEnabled(enabled);
-}
-
 void SendCoinsEntry::clear()
 {
     // clear UI elements for normal payment
@@ -195,16 +99,13 @@ void SendCoinsEntry::clear()
     ui->messageTextLabel->clear();
     ui->messageTextLabel->hide();
     ui->messageLabel->hide();
-    ui->inscriptionText->clear();
     // clear UI elements for unauthenticated payment request
     ui->payTo_is->clear();
     ui->memoTextLabel_is->clear();
-    ui->inscriptionText_is->clear();
     ui->payAmount_is->clear();
     // clear UI elements for authenticated payment request
     ui->payTo_s->clear();
     ui->memoTextLabel_s->clear();
-    ui->inscriptionText_s->clear();
     ui->payAmount_s->clear();
 
     // update the display unit, to not use the default ("BTC")
@@ -262,91 +163,6 @@ bool SendCoinsEntry::validate()
         retval = false;
     }
 
-    if (!ui->inscriptionText->text().isEmpty())
-    {
-        retval = false;
-        // Check if it is a hex string (produced by clicking "Notarise File")
-        if (IsHex(ui->inscriptionText->text().toStdString())) {
-            // and is of the correct length
-            if (ui->inscriptionText->text().length() == 64)
-                retval = true;
-        }
-        // Else check if it's a valid TrustyUri
-        else if ((ui->inscriptionText->text().startsWith("ni://") && (ui->inscriptionText->text().length() < 127))) {
-            std::string s = "ni://example.org/sha-256;5AbXdpz5DcaYXCh9l3eI9ruBosiL5XDU3rxBbBaUO70";
-            std::string regex = "(^http.?://)(.*?)([/\\?]{1,})(.*)";
-
-            if (std::regex_match ("softwareTesting", std::regex("(soft)(.*)") ))
-               std::cout << "string:literal => matched\n";
-
-            const char mystr[] = "SoftwareTestingHelp";
-            std::string str ("software");
-            std::regex str_expr ("(soft)(.*)");
-
-            if (std::regex_match (str,str_expr))
-               std::cout << "string:object => matched\n";
-
-            if ( std::regex_match ( str.begin(), str.end(), str_expr ) )
-               std::cout << "string:range(begin-end)=> matched\n";
-
-            std::cmatch cm;
-            std::regex_match (mystr,cm,str_expr);
-
-            std::smatch sm;
-            std::regex_match (str,sm,str_expr);
-
-            std::regex_match ( str.cbegin(), str.cend(), sm, str_expr);
-            std::cout << "String:range, size:" << sm.size() << " matches\n";
-
-
-            std::regex_match ( mystr, cm, str_expr, std::regex_constants::match_default );
-
-            std::cout << "the matches are: ";
-            for (unsigned i=0; i<sm.size(); ++i) {
-               std::cout << "[" << sm[i] << "] ";
-            }
-
-            std::cout << std::endl;
-
-            retval = true;
-        }
-        ui->inscriptionText->setValid(retval);
-    }
-
-    return retval;
-}
-
-bool SendCoinsEntry::validateInscription()
-{
-    if (!model)
-        return false;
-
-    // Check input validity
-    bool retval = true;
-
-    if (!ui->inscriptionText->text().isEmpty())
-    {
-        // Check if it is a hex string (produced by clicking "Notarise File")
-        if (IsHex(ui->inscriptionText->text().toStdString())) {
-            // and is of the correct length
-            if (ui->inscriptionText->text().length() == 64)
-                retval = false;
-        }
-        // Else check if it's a valid TrustyUri
-        else if ((ui->inscriptionText->text().startsWith("ni://") && (ui->inscriptionText->text().length() < 127))) {
-            std::string str = ui->inscriptionText->text().toStdString();
-            std::regex str_expr ("(^ni.?://)(.*?)([/\\?]{1,})(.*)");
-            std::smatch sm;
-            std::regex_match(str, sm, str_expr);
-            if (sm.size() != 4)
-                retval = false;
-
-            retval = true;
-        }
-
-        ui->inscriptionText->setValid(retval);
-    }
-
     return retval;
 }
 
@@ -361,7 +177,6 @@ SendCoinsRecipient SendCoinsEntry::getValue()
     recipient.label = ui->addAsLabel->text();
     recipient.amount = ui->payAmount->value();
     recipient.message = ui->messageTextLabel->text();
-    recipient.inscription = ui->inscriptionText->text();
     recipient.fSubtractFeeFromAmount = (ui->checkboxSubtractFeeFromAmount->checkState() == Qt::Checked);
 
     return recipient;
@@ -389,7 +204,6 @@ void SendCoinsEntry::setValue(const SendCoinsRecipient &value)
         {
             ui->payTo_is->setText(recipient.address);
             ui->memoTextLabel_is->setText(recipient.message);
-            ui->inscriptionText_is->setText(recipient.inscription);
             ui->payAmount_is->setValue(recipient.amount);
             ui->payAmount_is->setReadOnly(true);
             setCurrentWidget(ui->SendCoins_UnauthenticatedPaymentRequest);
@@ -398,7 +212,6 @@ void SendCoinsEntry::setValue(const SendCoinsRecipient &value)
         {
             ui->payTo_s->setText(recipient.authenticatedMerchant);
             ui->memoTextLabel_s->setText(recipient.message);
-            ui->inscriptionText_s->setText(recipient.inscription);
             ui->payAmount_s->setValue(recipient.amount);
             ui->payAmount_s->setReadOnly(true);
             setCurrentWidget(ui->SendCoins_AuthenticatedPaymentRequest);
@@ -410,11 +223,6 @@ void SendCoinsEntry::setValue(const SendCoinsRecipient &value)
         ui->messageTextLabel->setText(recipient.message);
         ui->messageTextLabel->setVisible(!recipient.message.isEmpty());
         ui->messageLabel->setVisible(!recipient.message.isEmpty());
-
-        // inscriptiom
-        ui->inscriptionText->setText(recipient.inscription);
-        ui->inscriptionText->setVisible(true);
-        ui->inscriptionLabel->setVisible(true);
 
         ui->addAsLabel->clear();
         ui->payTo->setText(recipient.address); // this may set a label from addressbook
@@ -428,11 +236,6 @@ void SendCoinsEntry::setAddress(const QString &address)
 {
     ui->payTo->setText(address);
     ui->payAmount->setFocus();
-}
-
-void SendCoinsEntry::setInscription(const QString &inscription)
-{
-    ui->inscriptionText->setText(inscription);
 }
 
 void SendCoinsEntry::setAmount(const CAmount &amount)

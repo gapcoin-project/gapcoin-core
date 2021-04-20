@@ -1,5 +1,4 @@
 // Copyright (c) 2011-2017 The Bitcoin Core developers
-// Copyright (c) 2020 The Gapcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -32,7 +31,6 @@ public:
 
     void setModel(WalletModel *model);
     bool validate();
-    bool validateInscription();
     SendCoinsRecipient getValue();
 
     /** Return whether the entry is still empty and unedited */
@@ -40,7 +38,6 @@ public:
 
     void setValue(const SendCoinsRecipient &value);
     void setAddress(const QString &address);
-    void setInscription(const QString &inscription);
     void setAmount(const CAmount &amount);
 
     /** Set up the tab chain manually, as Qt messes up the tab chain by default in some cases
@@ -51,7 +48,6 @@ public:
     void setFocus();
 
 public Q_SLOTS:
-    void setRemoveEnabled(bool enabled);
     void clear();
     void checkSubtractFeeFromAmount();
 
@@ -68,8 +64,7 @@ private Q_SLOTS:
     void on_addressBookButton_clicked();
     void on_pasteButton_clicked();
     void updateDisplayUnit();
-    void on_selectFileButton_clicked();
-    bool inscriptionChanged();
+
 private:
     SendCoinsRecipient recipient;
     Ui::SendCoinsEntry *ui;
@@ -77,7 +72,6 @@ private:
     const PlatformStyle *platformStyle;
 
     bool updateLabel(const QString &address);
-    std::string hashFile(std::string fileName);
 };
 
 #endif // BITCOIN_QT_SENDCOINSENTRY_H

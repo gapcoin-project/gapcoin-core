@@ -1,5 +1,4 @@
 // Copyright (c) 2011-2017 The Bitcoin Core developers
-// Copyright (c) 2020 The Gapcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -247,22 +246,11 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
             setAddress.insert(rcp.address);
             ++nAddresses;
 
-            if (rcp.inscription != "")
-            {
-                QByteArray ba = rcp.inscription.toLocal8Bit();
-                std::vector<unsigned char> data(ba.begin(), ba.end());
-                CScript scriptPubKey = CScript() << OP_RETURN << data;
-                CRecipient recipient = {scriptPubKey, rcp.amount, rcp.fSubtractFeeFromAmount};
-                vecSend.push_back(recipient);
+            CScript scriptPubKey = GetScriptForDestination(DecodeDestination(rcp.address.toStdString()));
+            CRecipient recipient = {scriptPubKey, rcp.amount, rcp.fSubtractFeeFromAmount};
+            vecSend.push_back(recipient);
 
-                total += rcp.amount;
-            } else {
-                CScript scriptPubKey = GetScriptForDestination(DecodeDestination(rcp.address.toStdString()));
-                CRecipient recipient = {scriptPubKey, rcp.amount, rcp.fSubtractFeeFromAmount};
-                vecSend.push_back(recipient);
-
-                total += rcp.amount;
-            }
+            total += rcp.amount;
         }
     }
     if(setAddress.size() != nAddresses)
@@ -580,15 +568,6 @@ bool WalletModel::IsSpendable(const CTxDestination& dest) const
 bool WalletModel::getPrivKey(const CKeyID &address, CKey& vchPrivKeyOut) const
 {
     return wallet->GetKey(address, vchPrivKeyOut);
-}
-
-void WalletModel::searchNotaryTx(uint256 hash)
-{
-    /* TODO search notary txs
-    std::vector<std::pair<std::string, int> > txResults;
-    wallet->SearchNotaryTransactions(hash, txResults);
-    emit notarySearchComplete(txResults);
-    */
 }
 
 // returns a list of COutputs from COutPoints
