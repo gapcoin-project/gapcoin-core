@@ -340,7 +340,7 @@ UniValue setgenerate(const JSONRPCRequest& request)
 
     if (request.params.size() > 2)
     {
-        nMiningSieveSize = (request.params[2].get_int() < 1000) ? 1000 : request.params[2].get_int();
+        nMiningSieveSize = (request.params[2].get_int64() < 1000) ? 1000 : request.params[2].get_int64();
 
         if (nMiningShift < 64 && nMiningSieveSize > (((uint64_t) 1) << nMiningShift))
            nMiningSieveSize = (((uint64_t) 1) << nMiningShift);
@@ -348,7 +348,7 @@ UniValue setgenerate(const JSONRPCRequest& request)
 
     if (request.params.size() > 3)
     {
-        nMiningPrimes = (request.params[3].get_int() < 1000) ? 1000 : request.params[3].get_int();
+        nMiningPrimes = (request.params[3].get_int64() < 1000) ? 1000 : request.params[3].get_int64();
     }
 
     if (request.params.size() > 4)
