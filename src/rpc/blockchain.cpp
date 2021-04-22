@@ -40,17 +40,12 @@
 #include <warnings.h>
 
 #include <boost/thread/thread.hpp> // boost::thread::interrupt
-#include <boost/bind.hpp>
-#include <boost/asio.hpp>
-#include <boost/asio/ssl.hpp>
-#include <boost/algorithm/string.hpp>
 
 #include <univalue.h>
 
 #include <memory>
 #include <mutex>
 #include <condition_variable>
-#include <iomanip>
 
 static PoWUtils *powUtils = new PoWUtils();
 
@@ -853,7 +848,7 @@ UniValue getblock(const JSONRPCRequest& request)
     if (fHavePruned && !(pblockindex->nStatus & BLOCK_HAVE_DATA) && pblockindex->nTx > 0)
         throw JSONRPCError(RPC_MISC_ERROR, "Block not available (pruned data)");
 
-    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus(), false))
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus()))
         // Block not found on disk. This could be because we have the block
         // header in our index but don't have the block (for example if a
         // non-whitelisted node sends us an unrequested long chain of valid
@@ -1732,7 +1727,7 @@ UniValue listprimerecords(const JSONRPCRequest& request)
         bnEnd.setvch(vEnd);
 
         CBlock block;
-        if (ReadBlockFromDisk(block, pindex, Params().GetConsensus(), false)) {
+        if (ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
 
             UniValue entry(UniValue::VOBJ);
 
@@ -1825,7 +1820,7 @@ UniValue listbestprimes(const JSONRPCRequest& request)
         bnEnd.setvch(vEnd);
 
         CBlock block;
-        if (ReadBlockFromDisk(block, pindex, Params().GetConsensus(), false)) {
+        if (ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
 
             UniValue entry(UniValue::VOBJ);
             entry.push_back(Pair("time", DateTimeStrFormat("%Y-%m-%d %H:%M:%S UTC", pindex->GetBlockTime()).c_str()));
@@ -1889,7 +1884,7 @@ static std::string blockgraph(const CBlockIndex* pblockindex)
     UniValue data;
     {
         LOCK(cs_main);
-        ReadBlockFromDisk(block, pblockindex, consensus_params, false);
+        ReadBlockFromDisk(block, pblockindex, consensus_params);
         data = blockToJSON(block, pblockindex, true);
     }
 
@@ -2008,91 +2003,6 @@ static std::string blockgraph(const CBlockIndex* pblockindex)
     return stream.str();
 }
 
-static std::map<int, float> getprimegaplist() {
-    boost::system::error_code ec;
-    boost::asio::io_service svc;
-    boost::asio::ssl::context ctx(boost::asio::ssl::context::tls);
-    boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssock(svc, ctx);
-    boost::asio::ip::tcp::resolver resolver(svc);
-    auto it = resolver.resolve({"raw.githubusercontent.com", "443"});
-    boost::asio::connect(ssock.lowest_layer(), it);
-
-    ssock.handshake(boost::asio::ssl::stream_base::handshake_type::client);
-
-    std::stringstream request;
-    request << "GET /primegap-list-project/prime-gap-list/master/allgaps.sql HTTP/1.1\r\n";
-    request << "Host: raw.githubusercontent.com\r\n";
-    request << "Accept-Encoding: *\r\n";
-    request << "\r\n";
-
-    boost::asio::write(ssock, boost::asio::buffer(request.str()));
-    std::string response;
-    size_t content_length = 999999999;
-
-    do {
-        char buf[8192];
-        size_t bytes_transferred = ssock.read_some(boost::asio::buffer(buf), ec);
-        if (!ec) response.append(buf, buf + bytes_transferred);
-        // Pro tem
-        if (response.length() == bytes_transferred) {
-            std::size_t cl = response.find("Content-Length: ");
-            std::size_t cc = response.find("Cache-Control:");
-            content_length = std::stoi(response.substr(cl+16, cc-(cl+16)));
-        }
-        if (response.length() > content_length)
-            ec = boost::asio::error::operation_aborted;
-    } while (!ec);
-    ssock.shutdown();
-    vector<string> results;
-    boost::split(results, response, boost::is_any_of("\n"));
-    std::map<int, float> gaps;
-    std::string target = "INSERT INTO gaps VALUES(";
-    std::vector<std::string> cells;
-    for (int i = 0; i < (int)results.size(); i++) {
-        std::size_t ge = results[i].find(target);
-        if (ge != std::string::npos) {
-            std::string entry = results[i].substr(target.length(), results[i].length()-2);
-            boost::split(cells, entry, boost::is_any_of(","));
-            gaps.insert(std::pair<int, float>(std::stoi(cells[0]), std::stof(cells[7])));
-        }
-    }
-    return gaps;
-}
-
-static std::string checkagainstprimegaplist(const CBlockIndex* pblockindex, std::map<int, float> gaps)
-{
-    std::stringstream stream;
-    CBlock block;
-    auto& consensus_params = Params().GetConsensus();
-    UniValue data;
-    {
-        LOCK(cs_main);
-        ReadBlockFromDisk(block, pblockindex, consensus_params, false);
-        data = blockToJSON(block, pblockindex, true);
-    }
-
-    float recordmerit = 0.0;
-    float merit = data["merit"].get_real();
-    int gap = data["gaplen"].get_int();
-
-    std::map<int,float>::iterator entry;
-    entry = gaps.find(gap);
-
-    if (entry != gaps.end()) {
-        recordmerit = entry->second;
-    }
-
-    if (merit >= recordmerit) {
-        stream << data["gaplen"].getValStr() << " ";
-        stream << "Gapcoin ";
-        stream << DateTimeStrFormat("%Y-%m-%d", std::stoll(data["time"].getValStr())) << " ";
-        stream << fixed << setprecision(6)<< data["merit"].get_real() << " ";
-        stream << data["gapstart"].getValStr();
-        stream << std::endl;
-    }
-    return stream.str();
-}
-
 UniValue renderblock(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() > 1)
@@ -2128,7 +2038,7 @@ UniValue renderblock(const JSONRPCRequest& request)
     if (fHavePruned && !(pblockindex->nStatus & BLOCK_HAVE_DATA) && pblockindex->nTx > 0)
         throw JSONRPCError(RPC_MISC_ERROR, "Block not available (pruned data)");
 
-    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus(), false))
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus()))
         // Block not found on disk. This could be because we have the block
         // header in our index but don't have the block (for example if a
         // non-whitelisted node sends us an unrequested long chain of valid
@@ -2170,7 +2080,7 @@ UniValue renderblockhash(const JSONRPCRequest& request)
     if (fHavePruned && !(pblockindex->nStatus & BLOCK_HAVE_DATA) && pblockindex->nTx > 0)
         throw JSONRPCError(RPC_MISC_ERROR, "Block not available (pruned data)");
 
-    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus(), false))
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus()))
         // Block not found on disk. This could be because we have the block
         // header in our index but don't have the block (for example if a
         // non-whitelisted node sends us an unrequested long chain of valid
@@ -2182,6 +2092,7 @@ UniValue renderblockhash(const JSONRPCRequest& request)
     result.setStr(blockgraph(pblockindex));
     return result;
 }
+
 
 UniValue dumptriples(const JSONRPCRequest& request)
 {
@@ -2246,36 +2157,6 @@ UniValue dumptriples(const JSONRPCRequest& request)
     return reply;
 }
 
-UniValue checkprimegaplist(const JSONRPCRequest& request)
-{
-    if (request.fHelp || request.params.size() < 1 || request.params.size() > 2)
-        throw std::runtime_error(
-            "checkprimegaplist startheight endheight\n"
-            "\nReturns a list of formatted record gaps or improved merits appropriate for copying and\n"
-            "\npasting into Seth Troisi’s online submission service at https://primegaps.cloudygo.com/.\n"
-            "\nArguments:\n"
-            "1. startheight    (integer) First block number to check.\n"
-            "2. endheight      (integer, default = chaintip) Last block number to check.\n"
-            );
-
-    int nStartBlock = request.params[0].get_int();
-    CBlockIndex* pblockindex = chainActive[nStartBlock];
-
-    int nEndBlock = chainActive.Tip()->nHeight;
-    if (request.params.size() > 1)
-        nEndBlock = request.params[1].get_int();
-
-    std::map<int, float> gaps = getprimegaplist();
-    std::stringstream results;
-
-    while (pblockindex->nHeight < nEndBlock)
-    {
-        results << checkagainstprimegaplist(pblockindex, gaps);
-        pblockindex = chainActive.Next(pblockindex);
-    }
-    return results.str();
-}
-
 static const CRPCCommand commands[] =
 { //  category              name                      actor (function)         argNames
   //  --------------------- ------------------------  -----------------------  ----------
@@ -2303,7 +2184,6 @@ static const CRPCCommand commands[] =
 
     { "blockchain",         "listprimerecords",       &listprimerecords,       {"merit"} },
     { "blockchain",         "listbestprimes",         &listbestprimes,         {"amount", "merit"} },
-    { "blockchain",         "checkprimegaplist",      &checkprimegaplist,      {"start", "end"} },
 
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },
