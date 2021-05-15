@@ -2093,7 +2093,6 @@ UniValue renderblockhash(const JSONRPCRequest& request)
     return result;
 }
 
-
 UniValue dumptriples(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() < 1 || request.params.size() > 3)
