@@ -44,16 +44,22 @@ extern uint64_t nHashesPerSec;
 #ifdef ENABLE_WALLET
 
 // Allocated in InitRPCMining, freed in ShutdownRPCMining
-/*
+
 static CReserveKey* pMiningKey = NULL;
+std::shared_ptr<CReserveScript> coinbaseScript = std::make_shared<CReserveScript>();
 
 void InitRPCMining()
 {
-    if (!pwalletMain)
+    if (vpwallets.empty())
         return;
 
     // getblocktemplate mining rewards paid here:
-    pMiningKey = new CReserveKey(pwalletMain);
+    pMiningKey = new CReserveKey(vpwallets[0]);
+    CPubKey pubkey;
+    pMiningKey->GetReservedKey(pubkey, true);
+    CTxDestination destination = GetDestinationForKey(pubkey, g_address_type);
+    coinbaseScript->reserveScript = GetScriptForDestination(destination);
+    GetMainSignals().ScriptForMining(coinbaseScript);
 }
 
 void ShutdownRPCMining()
@@ -63,8 +69,9 @@ void ShutdownRPCMining()
 
     delete pMiningKey;
     pMiningKey = NULL;
+    coinbaseScript.reset();
+    coinbaseScript = NULL;
 }
-*/
 
 #endif //ENABLE_WALLET
 
@@ -307,19 +314,21 @@ UniValue setgenerate(const JSONRPCRequest& request)
             "\nArguments:\n"
             "1. generate         (boolean, required) Set to true to turn on generation, false to turn off.\n"
             "2. genproclimit     (numeric, optional) Set the processor limit for when generation is on. Can be -1 for unlimited.\n"
-            "3. sievesize        (numeric, optional) Sets the size of the prime sieve (33554432).\n"
-            "4. sieveprimes      (numeric, optional) Sets the amount of primes used in the sieve (900000).\n"
-            "5. shift            (numeric, optional) Sets the header shift (25).\n"
+            "3. shift            (numeric, optional) Sets the header shift (advised: 25).\n"
+            "4. sieveprimes      (numeric, optional) Sets the amount of primes used in the sieve (advised: 900000).\n"
+            "5. sievesize        (numeric, optional) Sets the size of the prime sieve (advised: 33554432).\n"
             "                    Note: sieve size can only have 2^shift size.\n"
             "\nExamples:\n"
-            "\nSet the generation on with a limit of one processor\n"
+            "\nSet the generation on with a limit of one processor, default mining parameters\n"
             + HelpExampleCli("setgenerate", "true 1") +
-            "\nCheck the setting\n"
-            + HelpExampleCli("getgenerate", "") +
+            "\nSet the generation on with a limit of one processor, explicit mining parameters\n"
+            + HelpExampleCli("setgenerate", "true 1 25 900000 33554432") +
             "\nTurn off generation\n"
             + HelpExampleCli("setgenerate", "false") +
-            "\nUsing json rpc\n"
-            + HelpExampleRpc("setgenerate", "true, 1")
+            "\nUsing json rpc with default mining parameters\n"
+            + HelpExampleRpc("setgenerate", "true, 1") +
+            "\nUsing json rpc with explicit mining parameters\n"
+            + HelpExampleRpc("setgenerate", "true, 1, 25, 900000, 33554432")
         );
 
     if (Params().MineBlocksOnDemand())
@@ -331,6 +340,7 @@ UniValue setgenerate(const JSONRPCRequest& request)
         fGenerate = request.params[0].get_bool();
 
     int nGenProcLimit = gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS);
+
     if (request.params.size() > 1)
     {
         nGenProcLimit = request.params[1].get_int();
@@ -340,10 +350,12 @@ UniValue setgenerate(const JSONRPCRequest& request)
 
     if (request.params.size() > 2)
     {
-        nMiningSieveSize = (request.params[2].get_int64() < 1000) ? 1000 : request.params[2].get_int64();
-
-        if (nMiningShift < 64 && nMiningSieveSize > (((uint64_t) 1) << nMiningShift))
-           nMiningSieveSize = (((uint64_t) 1) << nMiningShift);
+        if (request.params[2].get_int() < 14)
+            nMiningShift = 14;
+        else if (request.params[2].get_int() >= (1 << 16))
+            nMiningShift = (1 << 16) - 1;
+        else
+            nMiningShift = request.params[2].get_int();
     }
 
     if (request.params.size() > 3)
@@ -353,12 +365,7 @@ UniValue setgenerate(const JSONRPCRequest& request)
 
     if (request.params.size() > 4)
     {
-        if (request.params[4].get_int() < 14)
-            nMiningShift = 14;
-        else if (request.params[4].get_int() >= (1 << 16))
-            nMiningShift = (1 << 16) - 1;
-        else
-            nMiningShift = request.params[4].get_int();
+        nMiningSieveSize = (request.params[4].get_int64() < 1000) ? 1000 : request.params[4].get_int64();
 
         if (nMiningShift < 64 && nMiningSieveSize > (((uint64_t) 1) << nMiningShift))
            nMiningSieveSize = (((uint64_t) 1) << nMiningShift);
@@ -371,16 +378,14 @@ UniValue setgenerate(const JSONRPCRequest& request)
     int numCores = GenerateGapcoins(fGenerate, nGenProcLimit, Params());
 
     nGenProcLimit = nGenProcLimit >= 0 ? nGenProcLimit : numCores;
-    // std::string msg = std::to_string(nGenProcLimit) + " of " + std::to_string(numCores);
     std::string msg = "Mining with " + std::to_string(nGenProcLimit) + " of " + std::to_string(numCores) + " threads," + \
-            " sieve-size " + std::to_string(nMiningSieveSize) + \
+            " shift " + std::to_string(nMiningShift) + \
             " sieve-primes " + std::to_string(nMiningPrimes) + \
-            " shift " + std::to_string(nMiningShift);
-
+            " sieve-size " + std::to_string(nMiningSieveSize);
     if (fGenerate) {
-    	return msg;
-    }else{
-	return "Not mining.";
+        return msg;
+    } else {
+        return "Not mining.";
     }
 }
 
@@ -566,17 +571,8 @@ UniValue getwork(const JSONRPCRequest& request)
     static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
     static vector<std::unique_ptr<CBlockTemplate>> vNewBlockTemplate;
 
-    CReserveKey reservekey(pwallet);
-    CPubKey pubkey;
-    reservekey.GetReservedKey(pubkey, true);
-    CTxDestination destination = GetDestinationForKey(pubkey, g_address_type);
-    std::shared_ptr<CReserveScript> coinbaseScript = std::make_shared<CReserveScript>();
-    coinbaseScript->reserveScript = GetScriptForDestination(destination);
-
-
     if (request.params.size() == 0)
     {
-        GetMainSignals().ScriptForMining(coinbaseScript);
         
         // If the keypool is exhausted, no script is returned at all.  Catch this.
         if (!coinbaseScript)
@@ -1382,7 +1378,7 @@ static const CRPCCommand commands[] =
     /* Coin generation */
     { "generating",         "getwork",                &getwork,                {"data"} },
     { "generating",         "getgenerate",            &getgenerate,            {}  },
-    { "generating",         "setgenerate",            &setgenerate,            {"generate", "genproclimit", "sievesize", "sieveprimes", "shift"}  },
+    { "generating",         "setgenerate",            &setgenerate,            {"generate", "genproclimit", "shift", "sieveprimes", "sievesize"}  },
 #endif
     { "generating",         "generatetoaddress",      &generatetoaddress,      {"nblocks","address","maxtries"} },
 

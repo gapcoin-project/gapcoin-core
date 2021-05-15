@@ -79,12 +79,12 @@ class BlockProcessor : public PoWProcessor {
     }
 
     bool process(PoW *pow) {
-      SetThreadPriority(THREAD_PRIORITY_NORMAL);
+      // SetThreadPriority(THREAD_PRIORITY_NORMAL);
 
       pow->get_adder(&pblock->nAdd);
       bool ret = CheckWork(pblock, coinbasescript);
 
-      SetThreadPriority(THREAD_PRIORITY_LOWEST);
+      // SetThreadPriority(THREAD_PRIORITY_LOWEST);
       return !ret;
     }
 
@@ -225,6 +225,8 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     UpdateTime(pblock, chainparams.GetConsensus(), pindexPrev);
     pblock->nDifficulty    = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
     pblock->nShift         = nMiningShift;
+    pblock->nNonce         = 0;
+    /* FIXME gjh mining - inferred as (and tested to be) redundant, nAdd value is set by PowCore
     if (TestNet())
     {
         uint8_t nAdd[] = { 25, 1 };
@@ -233,9 +235,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         uint8_t nAdd[] = { 233, 156, 15 };
         pblock->nAdd.assign(nAdd, nAdd + sizeof(nAdd) / sizeof(uint8_t));
     }
-
-    // pblock->vtx[0].vout[0].nValue = nFees + 50; // GetBlockSubsidy(pindexPrev->nHeight+1, GetNextWorkRequired(pindexPrev, pblock), chainparams.GetConsensus());
-    // pblocktemplate->vTxFees[0] = -nFees;
+    */
     pblocktemplate->vTxSigOpsCost[0] = WITNESS_SCALE_FACTOR * GetLegacySigOpCount(*pblock->vtx[0]);
 
     CValidationState state;
@@ -597,7 +597,7 @@ CWallet *GetFirstWallet() {
 
 void static GapcoinMiner(int nThread, int numThreads, const CChainParams& chainparams)
 {
-    LogPrintf("GapcoinMiner %s started\n", nThread);
+    LogPrintf("GapcoinMiner %s started, shift %s, sieve-primes %s, sieve-size %s\n", nThread, nMiningShift, nMiningPrimes, nMiningSieveSize);
     // SetThreadPriority(20); //THREAD_PRIORITY_LOWEST
     RenameThread(strprintf("gapcoin-miner %s", nThread).c_str());
 
