@@ -1176,7 +1176,6 @@ bool IsInitialBlockDownload()
     // Optimization: pre-test latch before taking the lock.
     if (latchToFalse.load(std::memory_order_relaxed))
         return false;
-
     LOCK(cs_main);
     if (latchToFalse.load(std::memory_order_relaxed))
         return false;

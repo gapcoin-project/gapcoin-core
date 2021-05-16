@@ -31,6 +31,7 @@
 
 #include <boost/signals2/signal.hpp>
 #include <boost/thread/condition_variable.hpp> // for boost::thread_interrupted
+/*
 #include <boost/thread.hpp>
 
 #ifndef WIN32
@@ -39,7 +40,7 @@
 #else
 #include <shellapi.h>
 #endif
-
+*/
 // Application startup time (used for uptime calculation)
 int64_t GetStartupTime();
 
@@ -319,6 +320,7 @@ std::string HelpMessageOpt(const std::string& option, const std::string& message
  */
 int GetNumCores();
 
+/*
 #ifdef WIN32
 inline void SetThreadPriority(int nPriority)
 {
@@ -346,14 +348,9 @@ inline void SetThreadPriority(int nPriority)
 #endif
 }
 #endif
+*/
 
 void RenameThread(const char* name);
-
-inline uint32_t ByteReverse(uint32_t value)
-{
-    value = ((value & 0xFF00FF00) >> 8) | ((value & 0x00FF00FF) << 8);
-    return (value<<16) | (value>>16);
-}
 
 /**
  * .. and a wrapper that just calls func once
